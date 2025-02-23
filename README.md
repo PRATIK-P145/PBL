@@ -1,8 +1,6 @@
 # PBL
 <h1>Touchless Virtual Calculator using Computer Vision</h1>
-Great! Based on your project requirements, here’s a **step-by-step plan** to break it into manageable chunks.  
 
----
 
 ## **🔹 Project Plan: Virtual Calculator using Tkinter & OpenCV**  
 
