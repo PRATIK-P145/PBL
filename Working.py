@@ -11,9 +11,9 @@ class Button:
 
     def draw(self, img):
         cv2.rectangle(img, self.pos, (self.pos[0] + self.width, self.pos[1] + self.height),
-                      (225, 225, 225), cv2.FILLED)
+                      (255, 153, 225), cv2.FILLED)
         cv2.rectangle(img, self.pos, (self.pos[0] + self.width, self.pos[1] + self.height),
-                      (50, 50, 50), 3)
+                      (204, 0, 204), 3)
         cv2.putText(img, self.value, (self.pos[0] + 30, self.pos[1] + 70), cv2.FONT_HERSHEY_PLAIN,
                     2, (50, 50, 50), 2)
 
@@ -51,9 +51,15 @@ while True:
     img = cv2.flip(img, 1)
     hands, img = detector.findHands(img, flipType=False)
 
+    alpha = 0.5  # Transparency level (0 = fully transparent, 1 = fully opaque)
+
+# Create a copy of the original image
+    overlay = img.copy()
+
     # Draw UI
     cv2.rectangle(img, (50, 50), (450, 150), (225, 225, 225), cv2.FILLED)
-    cv2.rectangle(img, (50, 50), (450, 150), (50, 50, 50), 3)
+    cv2.rectangle(img, (50, 50), (450, 150), (50, 50, 50),3)
+    # cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
     for button in buttonList:
         button.draw(img)
 
@@ -64,7 +70,7 @@ while True:
             x1, y1, _ = lmList[8]
             x2, y2, _ = lmList[12]
             length, _, img = detector.findDistance((x1, y1), (x2, y2), img)
-            print(length)
+           # print(length)
 
             if length < 50 and delayCounter == 0:
                 for button in buttonList:
