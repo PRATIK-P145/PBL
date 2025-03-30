@@ -10,7 +10,7 @@ cap = cv2.VideoCapture(0)
 cap.set(3, 1280)  # Set width to 1280
 cap.set(4, 720)   # Set height to 720
 
-# Define calculator UI size (same as marker size)
+# Define calculator UI size (initial size)
 ui_size = 200
 
 # Load or generate a basic calculator UI as an overlay (dummy UI for now)
@@ -27,21 +27,50 @@ while True:
 
     if ids is not None:
         for i in range(len(ids)):
-            # Get marker corner points
-            corner_pts = corners[i][0].astype(np.float32)
+            if ids[i] == 0:  # Only overlay if the marker ID is 0
+                corner_pts = corners[i][0].astype(np.float32)
 
-            # Define destination points for the overlay (same size as marker)
-            dst_pts = np.array([[0, 0], [ui_size - 1, 0], [ui_size - 1, ui_size - 1], [0, ui_size - 1]], dtype=np.float32)
+                # Calculate marker width and height to scale UI (1.5x size)
+                marker_size = np.linalg.norm(corner_pts[0] - corner_pts[1])  # Width of the marker
+                ui_size = int(marker_size * 3.5)  # Increase size by 1.5x
 
-            # Get perspective transform matrix
-            matrix, _ = cv2.findHomography(dst_pts, corner_pts)
+                # Resize the calculator UI to match the new size
+                calculator_resized = cv2.resize(calculator_ui, (ui_size, ui_size))
 
-            # Warp and overlay the calculator UI onto the detected marker
-            warped_ui = cv2.warpPerspective(calculator_ui, matrix, (frame.shape[1], frame.shape[0]))
+                # Calculate marker center
+                marker_center = np.mean(corner_pts, axis=0)
 
-            # Create a mask to overlay the warped UI
-            mask = (warped_ui > 0).astype(np.uint8) * 255
-            frame = cv2.addWeighted(frame, 1, warped_ui, 0.7, 0)
+# Calculate half of the scaled size
+                half_size = (ui_size / 2)
+
+# Define destination points for the overlay (scaled UI centered on the marker)
+                dst_pts = np.array([
+                [marker_center[0] - half_size, marker_center[1] - half_size],
+                [marker_center[0] + half_size, marker_center[1] - half_size],
+                [marker_center[0] + half_size, marker_center[1] + half_size],
+                [marker_center[0] - half_size, marker_center[1] + half_size]
+                ], dtype=np.float32)
+
+
+                # Define source points from the resized UI
+                src_pts = np.array([
+                    [0, 0],
+                    [ui_size - 1, 0],
+                    [ui_size - 1, ui_size - 1],
+                    [0, ui_size - 1]
+                ], dtype=np.float32)
+
+                # Get perspective transform matrix
+                matrix, _ = cv2.findHomography(src_pts, dst_pts)
+
+                # Warp the calculator UI onto the detected marker
+                warped_ui = cv2.warpPerspective(calculator_resized, matrix, (frame.shape[1], frame.shape[0]))
+
+                # Create a mask to blend only the UI region
+                mask = (warped_ui > 0).astype(np.uint8)
+
+                # Overlay the warped UI only on the marker area
+                frame[mask == 1] = cv2.addWeighted(frame, 0.5, warped_ui, 0.7, 0)[mask == 1]
 
     # Display the result
     cv2.imshow("ArUco Marker with Calculator UI", frame)
