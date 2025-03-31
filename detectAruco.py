@@ -18,57 +18,46 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-# Load the improved calculator UI with transparent background
-calculator_ui = cv2.imread("calculator_ui_preview.png", cv2.IMREAD_UNCHANGED)
-
-if calculator_ui.shape[2] == 3:  # BGR to RGB if 3 channels (no alpha)
-    calculator_ui = cv2.cvtColor(calculator_ui, cv2.COLOR_BGR2RGB)
-elif calculator_ui.shape[2] == 4:  # BGRA to RGBA if 4 channels (with alpha)
-    calculator_ui = cv2.cvtColor(calculator_ui, cv2.COLOR_BGRA2RGBA)
-
 # Scale factor for UI size (default 2.1x of marker size)
 ui_scale_factor = 2.1
 
-# Calculator grid size
-rows, cols = 4, 4  # 4 rows and 4 columns for standard calculator layout
+# Define button size and spacing
+button_width, button_height = 40, 40  # Default button size
+button_spacing_x, button_spacing_y = 5, 5  # Spacing between buttons
 
-# Define button actions
-button_actions = {
-    (0, 0): "7", (0, 1): "8", (0, 2): "9", (0, 3): "/",
-    (1, 0): "4", (1, 1): "5", (1, 2): "6", (1, 3): "*",
-    (2, 0): "1", (2, 1): "2", (2, 2): "3", (2, 3): "-",
-    (3, 0): "0", (3, 1): "C", (3, 2): "=", (3, 3): "+"
-}
+# Define button labels and positions dynamically
+button_labels = [
+    ["7", "8", "9", "/"],
+    ["4", "5", "6", "*"],
+    ["1", "2", "3", "-"],
+    ["0", ".", "=", "+"]
+]
 
-# Convert RGBA to BGR for overlay
-def get_bgr_ui(resized_ui):
-    if resized_ui.shape[2] == 4:
-        # Extract RGB and ignore alpha
-        return cv2.cvtColor(resized_ui[:, :, :3], cv2.COLOR_RGBA2BGR)
-    return resized_ui
+button_coords = []
 
+# Get button boundaries dynamically after UI placement
+def get_button_coords(ui_top_left, button_width, button_height, button_spacing_x, button_spacing_y):
+    coords = []
+    for row_idx, row in enumerate(button_labels):
+        for col_idx, label in enumerate(row):
+            x1 = int(ui_top_left[0] + col_idx * (button_width + button_spacing_x))
+            y1 = int(ui_top_left[1] + row_idx * (button_height + button_spacing_y))
+            x2 = x1 + button_width
+            y2 = y1 + button_height
+            coords.append({"label": label, "x1": x1, "y1": y1, "x2": x2, "y2": y2})
+    return coords
 
-# Function to calculate button coordinates dynamically
-def get_button_coordinates(resized_ui, display_height_ratio=0.25):
-    h, w = resized_ui.shape[:2]
+# Dummy function to get fingertip position (for now we'll use the center of the frame)
+def get_fingertip_position(frame):
+    h, w, _ = frame.shape
+    return (w // 2, h // 2)
 
-    # Skip display area - calculate height offset
-    display_height = int(h * display_height_ratio)
-    button_height_area = h - display_height
-
-    button_width = w // cols
-    button_height = button_height_area // rows
-
-    button_coords = {}
-
-    for row in range(rows):
-        for col in range(cols):
-            x1, y1 = col * button_width, display_height + row * button_height
-            x2, y2 = (col + 1) * button_width, display_height + (row + 1) * button_height
-            button_coords[(row, col)] = (x1, y1, x2, y2)
-
-    return button_coords
-
+# Detect button press based on fingertip position
+def detect_button_press(fingertip_pos, button_coords):
+    for button in button_coords:
+        if button["x1"] <= fingertip_pos[0] <= button["x2"] and button["y1"] <= fingertip_pos[1] <= button["y2"]:
+            return button["label"]
+    return None
 
 while True:
     ret, frame = cap.read()
@@ -99,103 +88,47 @@ while True:
                 marker_size = np.linalg.norm(corner_pts[0] - corner_pts[1])  # Width of marker
                 ui_size = int(marker_size * ui_scale_factor)  # Dynamic scale based on marker size
 
-                # Resize improved calculator UI to the correct size
-                h, w = calculator_ui.shape[:2]
-                aspect_ratio = w / h
-
-                # Calculate new size while maintaining aspect ratio
-                if w >= h:
-                    new_w = ui_size
-                    new_h = int(new_w / aspect_ratio)
-                else:
-                    new_h = ui_size
-                    new_w = int(new_h * aspect_ratio)
-
-                # Resize UI while maintaining aspect ratio
-                resized_ui = cv2.resize(calculator_ui, (new_w, new_h))
-                calculator_bgr = get_bgr_ui(resized_ui)
-
-                # Get button coordinates dynamically after resizing UI
-                button_coords = get_button_coordinates(resized_ui)
-
-                # Update source points based on new UI size
-                src_pts = np.array([
-                    [0, 0],
-                    [new_w - 1, 0],
-                    [new_w - 1, new_h - 1],
-                    [0, new_h - 1]
-                ], dtype=np.float32)
-
-                # Get corner points of the marker
                 top_left, top_right, bottom_right, bottom_left = corner_pts
-
-                # Place UI aligned to the right side of marker
                 offset_vector = (top_right - top_left) / np.linalg.norm(top_right - top_left)
                 vertical_offset_vector = (bottom_left - top_left) / np.linalg.norm(bottom_left - top_left)
 
                 dst_pts = np.array([
-                    top_right,  # Align top-left of UI to top-right of marker
+                    top_right,
                     top_right + offset_vector * ui_size,
                     bottom_right + offset_vector * ui_size + vertical_offset_vector * ui_size,
                     bottom_right + vertical_offset_vector * ui_size
                 ], dtype=np.float32)
 
-                # Calculate perspective transform
-                matrix, _ = cv2.findHomography(src_pts, dst_pts)
-
-                # Warp the improved UI onto the right side
-                warped_ui = cv2.warpPerspective(calculator_bgr, matrix, (frame.shape[1], frame.shape[0]))
-
-                # Create a mask to overlay only the UI region
-                mask = cv2.cvtColor(warped_ui, cv2.COLOR_BGR2GRAY)
-                _, mask = cv2.threshold(mask, 1, 255, cv2.THRESH_BINARY)
-
-                # Overlay the warped UI onto the frame
-                alpha = 0.7  # Transparency level
-                for c in range(3):
-                    frame[:, :, c] = np.where(
-                        mask == 255,
-                        cv2.addWeighted(warped_ui[:, :, c], alpha, frame[:, :, c], 1 - alpha, 0),
-                        frame[:, :, c]
-                    )
+                # Get button coordinates dynamically after placing UI
+                button_coords = get_button_coords(top_right, button_width, button_height, button_spacing_x, button_spacing_y)
 
                 # Draw button boundaries for visualization
-                for (row, col), (x1, y1, x2, y2) in button_coords.items():
-                    warped_button_pts = np.array([
-                        [x1, y1],
-                        [x2, y1],
-                        [x2, y2],
-                        [x1, y2]
-                    ], dtype=np.float32)
+                for button in button_coords:
+                    cv2.rectangle(frame, (button["x1"], button["y1"]), (button["x2"], button["y2"]), (0, 255, 0), 2)
+                    cv2.putText(frame, button["label"], (button["x1"] + 10, button["y1"] + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                    # Transform button coordinates to frame coordinates
-                    transformed_pts = cv2.perspectiveTransform(warped_button_pts.reshape(-1, 1, 2), matrix)
-                    transformed_pts = np.int32(transformed_pts.reshape(-1, 2))
+                # Detect fingertip position (for now, center of frame)
+                fingertip_pos = get_fingertip_position(frame)
+                cv2.circle(frame, fingertip_pos, 10, (0, 0, 255), -1)
 
-                    # Draw button rectangle for debugging
-                    cv2.polylines(frame, [transformed_pts], isClosed=True, color=(0, 255, 0), thickness=2)
+                # Detect button press and print result
+                button_pressed = detect_button_press(fingertip_pos, button_coords)
+                if button_pressed:
+                    print(f"Button Pressed: {button_pressed}")
 
-    # Display result
     cv2.putText(frame, f"UI Size: {ui_scale_factor:.1f}x", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
     cv2.imshow("ArUco Marker with Enhanced Calculator UI", frame)
 
-    # Key press handling
     key = cv2.waitKey(1) & 0xFF
-
-    # Press 's' to increase size by 0.5
     if key == ord('s'):
         ui_scale_factor += 0.5
         print(f"UI size increased to: {ui_scale_factor:.1f}x")
-
-    # Press 'a' to decrease size by 0.5
     elif key == ord('a'):
         if ui_scale_factor > 0.5:
             ui_scale_factor -= 0.5
             print(f"UI size decreased to: {ui_scale_factor:.1f}x")
         else:
             print("UI size cannot be reduced further!")
-
-    # Press 'q' to quit
     elif key == ord('q'):
         break
 
