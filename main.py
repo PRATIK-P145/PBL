@@ -3,6 +3,32 @@ import numpy as np
 from cv2 import aruco
 from cvzone.HandTrackingModule import HandDetector
 import time
+from threading import Thread
+
+class WebcamStream:
+    def __init__(self, src=0):
+        self.cap = cv2.VideoCapture(src)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffering
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Lower resolution
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.cap.set(cv2.CAP_PROP_FPS, 30)
+        self.ret, self.frame = self.cap.read()
+        self.stopped = False
+
+    def start(self):
+        Thread(target=self.update, args=()).start()  # Start thread
+        return self
+
+    def update(self):
+        while not self.stopped:
+            self.ret, self.frame = self.cap.read()
+
+    def read(self):
+        return self.ret, self.frame
+
+    def stop(self):
+        self.stopped = True
+        self.cap.release()
 
 class ARCalculator:
     def __init__(self):
@@ -53,16 +79,13 @@ class ARCalculator:
         self.debounce_time = 0.3
         self.active_buttons = []
         
-        # Initialize camera
+        # Initialize camera (with multithreading)
         ip_url = "http://192.168.0.104:8080/video"
-        self.cap = cv2.VideoCapture(ip_url)
-       # self.cap = cv2.VideoCapture(0)
-
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        self.cap.set(cv2.CAP_PROP_FPS, 30)
+        #self.stream = WebcamStream(ip_url).start()
+        self.stream = WebcamStream(0).start()
+        time.sleep(1.0)  # Allow camera to warm up
         
-        # Create 800x600 window
+        # Create window
         cv2.namedWindow("AR Calculator", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("AR Calculator", 800, 600)
         
@@ -248,7 +271,7 @@ class ARCalculator:
 
     def run(self):
         while True:
-            ret, frame = self.cap.read()
+            ret, frame = self.stream.read()
             if not ret:
                 break
 
@@ -321,7 +344,8 @@ class ARCalculator:
                 fps = self.frame_count / (time.time() - self.start_time)
                 cv2.putText(display_frame, f"FPS: {int(fps)}", (20, 40), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-
+                
+            
             cv2.imshow("AR Calculator", display_frame)
             
             key = cv2.waitKey(1) & 0xFF
@@ -334,7 +358,7 @@ class ARCalculator:
 
             self.frame_count += 1
 
-        self.cap.release()
+        self.stream.stop()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
